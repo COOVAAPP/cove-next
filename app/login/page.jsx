@@ -24,3 +24,43 @@ export default function LoginPage() {
     </main>
   )
 }
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
+export default function LoginPage() {
+  const router = useRouter();
+  const supabase = createClientComponentClient();
+
+  const signInWithGoogle = async () => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    if (error) {
+      console.error('Error logging in:', error.message);
+    }
+  };
+
+  return (
+    <main style={{ padding: 24 }}>
+      <h1>Login</h1>
+      <button
+        onClick={signInWithGoogle}
+        style={{
+          background: '#4285F4',
+          color: '#fff',
+          padding: '10px 20px',
+          borderRadius: '4px',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        Login with Google
+      </button>
+    </main>
+  );
+}
