@@ -1,47 +1,59 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
 export default function ListYourSpacePage() {
   const router = useRouter();
-
-  // session gate
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
 
-  // form
+  // form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [pricePerHour, setPricePerHour] = useState('');
   const [location, setLocation] = useState('');
   const [file, setFile] = useState(null);
-
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
+    let unsub;
+
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (!data?.session) {
-        router.replace('/login');
-        return;
+      setUser(data?.session?.user ?? null);
+      setAuthChecked(true);                        // <-- never leave the UI stuck
+
+      if (!data?.session?.user) {
+        // small delay to avoid race with router
+        setTimeout(() => router.replace('/login?next=/list'), 50);
       }
-      setUser(data.session.user);
-      setAuthChecked(true);
     })();
+
+    const sub = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setAuthChecked(true);
+      if (!session?.user) router.replace('/login?next=/list');
+    });
+    unsub = sub?.data?.subscription;
+
+    return () => { unsub?.unsubscribe?.(); };
   }, [router]);
 
   if (!authChecked) {
-    return <main style={{ padding: 24 }}>Checking session…</main>;
+    return <main style={{ padding: 24 }}>Checking account…</main>;
+  }
+
+  if (!user) {
+    return <main style={{ padding: 24 }}>Redirecting to login…</main>;
   }
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr('');
     setSaving(true);
-
     try {
       let image_url = null;
 
@@ -50,15 +62,12 @@ export default function ListYourSpacePage() {
         const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
 
         const { error: upErr } = await supabase
-          .storage
-          .from('listing-images')
+          .storage.from('listing-images')
           .upload(path, file, { contentType: file.type, upsert: false });
-
         if (upErr) throw upErr;
 
         const { data: pub } = supabase
-          .storage
-          .from('listing-images')
+          .storage.from('listing-images')
           .getPublicUrl(path);
 
         image_url = pub.publicUrl;
@@ -175,4 +184,3 @@ export default function ListYourSpacePage() {
     </main>
   );
 }
-
