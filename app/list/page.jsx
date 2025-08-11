@@ -1,180 +1,116 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
 export default function ListYourSpace() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState(null);
-
-  // form state
+  const fileRef = useRef(null);
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [desc, setDesc]   = useState('');
   const [price, setPrice] = useState('');
-  const [location, setLocation] = useState('');
-  const [file, setFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let mounted = true;
-
-    const load = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!mounted) return;
-
-      if (!session) {
-        router.replace('/login');
-        return;
-      }
-
-      setSession(session);
-
-      // ensure profile row exists (FK on listings.owner_id)
-      await supabase.from('profiles').upsert(
-        { id: session.user.id },
-        { onConflict: 'id' }
-      );
-
-      setLoading(false);
-    };
-
-    load();
-    return () => { mounted = false; };
-  }, [router]);
+  const [loc, setLoc]     = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    setError('');
-
+    setErr('');
+    setLoading(true);
     try {
-      if (!session?.user?.id) throw new Error('Not authenticated');
-      if (!title || !price || !location) throw new Error('Missing required fields');
-      if (!file) throw new Error('Please choose an image');
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/login'); return; }
 
-      // 1) Upload image to public bucket
-      const path = `${session.user.id}/${Date.now()}-${file.name}`;
-      const { error: upErr } = await supabase
-        .storage
-        .from('listing-images')
-        .upload(path, file, { upsert: false });
+      let imageUrl = '';
+      const file = fileRef.current?.files?.[0];
+      if (file) {
+        const path = `${user.id}/${crypto.randomUUID()}-${file.name}`;
+        const { error: upErr } = await supabase
+          .storage.from('listing-images')
+          .upload(path, file, { cacheControl: '3600', upsert: false });
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from('listing-images').getPublicUrl(path);
+        imageUrl = pub.publicUrl;
+      }
 
-      if (upErr) throw upErr;
+      const { data, error } = await supabase
+        .from('listings')
+        .insert({
+          id: crypto.randomUUID(),
+          owner_id: user.id,
+          title,
+          description: desc,
+          price_per_hour: Number(price) || null,
+          location: loc,
+          image_url: imageUrl
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
 
-      // 2) Get public URL
-      const { data: pub } = supabase
-        .storage
-        .from('listing-images')
-        .getPublicUrl(path);
-
-      const imageUrl = pub?.publicUrl;
-      if (!imageUrl) throw new Error('Could not get image URL');
-
-      // 3) Insert listing
-      const { error: insErr } = await supabase.from('listings').insert({
-        id: crypto.randomUUID(),
-        owner_id: session.user.id,
-        title,
-        description,
-        price_per_hour: Number(price),
-        location,
-        image_url: imageUrl
-      });
-
-      if (insErr) throw insErr;
-
-      router.push('/');
-    } catch (err) {
-      setError(err.message || 'Failed to save listing');
+      router.push(`/listings/${data.id}`);
+    } catch (e2) {
+      setErr(e2.message ?? 'Failed to create listing');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  if (loading) {
-    return <main style={{ padding: 24 }}>Loading…</main>;
-  }
-
   return (
-    <main style={{ padding: 24, maxWidth: 720, margin: '0 auto' }}>
+    <main style={{ padding: 24, maxWidth: 760, margin: '0 auto' }}>
       <h1 style={{ marginBottom: 16 }}>List Your Space</h1>
 
-      {error && (
-        <div style={{ background: '#fee', border: '1px solid #f99', padding: 12, marginBottom: 16 }}>
-          {error}
-        </div>
-      )}
+      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
+        <input
+          required
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="Title (e.g., Modern Studio Loft)"
+          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
+        />
+        <textarea
+          value={desc}
+          onChange={e => setDesc(e.target.value)}
+          placeholder="Description"
+          rows={4}
+          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
+        />
+        <input
+          type="number"
+          value={price}
+          onChange={e => setPrice(e.target.value)}
+          placeholder="Price per hour"
+          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
+        />
+        <input
+          value={loc}
+          onChange={e => setLoc(e.target.value)}
+          placeholder="Location (City, ST)"
+          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
+        />
 
-      <form onSubmit={onSubmit}>
-        <label>
-          Title<br />
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, marginTop: 6, marginBottom: 12 }}
-          />
-        </label>
+        <input type="file" ref={fileRef} accept="image/*" />
 
-        <label>
-          Description<br />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            style={{ width: '100%', padding: 8, marginTop: 6, marginBottom: 12 }}
-          />
-        </label>
+        {err && <div style={{ color: 'crimson' }}>{err}</div>}
 
-        <div style={{ display: 'flex', gap: 12 }}>
-          <label style={{ flex: 1 }}>
-            Price per hour ($)<br />
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              required
-              style={{ width: '100%', padding: 8, marginTop: 6, marginBottom: 12 }}
-            />
-          </label>
-
-          <label style={{ flex: 1 }}>
-            Location<br />
-            <input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              required
-              style={{ width: '100%', padding: 8, marginTop: 6, marginBottom: 12 }}
-            />
-          </label>
-        </div>
-
-        <label>
-          Cover image (JPEG/PNG)<br />
-          <input
-            type="file"
-            accept="image/jpeg,image/png"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            required
-            style={{ marginTop: 6, marginBottom: 16 }}
-          />
-        </label>
-
-        <div>
-          <button
-            type="submit"
-            disabled={saving}
-            style={{ padding: '10px 16px', background: '#3b82f6', color: 'white', border: 0, borderRadius: 6 }}
-          >
-            {saving ? 'Saving…' : 'Publish Listing'}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            background: '#2563eb',
+            color: '#fff',
+            padding: '10px 16px',
+            borderRadius: 6,
+            fontWeight: 600,
+            border: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          {loading ? 'Uploading…' : 'Create Listing'}
+        </button>
       </form>
     </main>
   );
 }
+
