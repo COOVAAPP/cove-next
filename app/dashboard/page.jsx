@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -18,10 +19,12 @@ export default function DashboardPage() {
       setLoading(false);
     };
     load();
+
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       if (!session?.user) router.replace('/login');
       else setUser(session.user);
     });
+
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
