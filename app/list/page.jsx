@@ -1,60 +1,69 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
 export default function ListYourSpacePage() {
   const router = useRouter();
 
+  // session gate
+  const [authChecked, setAuthChecked] = useState(false);
+  const [user, setUser] = useState(null);
+
+  // form
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [pricePerHour, setPricePerHour] = useState('');
   const [location, setLocation] = useState('');
   const [file, setFile] = useState(null);
 
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (!data.session) router.replace('/login');
-    })();
-  }, [router]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setErr('');
-    setLoading(true);
-
-    try {
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth.user;
-      if (!user) {
+      if (!data?.session) {
         router.replace('/login');
         return;
       }
+      setUser(data.session.user);
+      setAuthChecked(true);
+    })();
+  }, [router]);
 
-      // Upload image (optional)
+  if (!authChecked) {
+    return <main style={{ padding: 24 }}>Checking session…</main>;
+  }
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setErr('');
+    setSaving(true);
+
+    try {
       let image_url = null;
+
       if (file) {
         const ext = file.name.split('.').pop();
         const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+
         const { error: upErr } = await supabase
           .storage
           .from('listing-images')
           .upload(path, file, { contentType: file.type, upsert: false });
+
         if (upErr) throw upErr;
 
         const { data: pub } = supabase
           .storage
           .from('listing-images')
           .getPublicUrl(path);
+
         image_url = pub.publicUrl;
       }
 
-      // Insert listing
       const { data: inserted, error: insErr } = await supabase
         .from('public.listings')
         .insert({
@@ -63,7 +72,7 @@ export default function ListYourSpacePage() {
           description,
           price_per_hour: pricePerHour ? Number(pricePerHour) : null,
           location,
-          image_url
+          image_url,
         })
         .select('id')
         .single();
@@ -71,10 +80,10 @@ export default function ListYourSpacePage() {
       if (insErr) throw insErr;
 
       router.push(`/listings/${inserted.id}`);
-    } catch (e2) {
-      setErr(e2.message ?? 'Error creating listing');
+    } catch (e) {
+      setErr(e.message ?? 'Error creating listing');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -82,20 +91,20 @@ export default function ListYourSpacePage() {
     <main style={{ maxWidth: 720, margin: '40px auto', padding: 24 }}>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>List Your Space</h1>
 
-      {err ? (
+      {err && (
         <div style={{ background: '#fee2e2', color: '#991b1b', padding: 12, borderRadius: 8, marginBottom: 16 }}>
           {err}
         </div>
-      ) : null}
+      )}
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 16 }}>
+      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 16 }}>
         <label style={{ display: 'grid', gap: 6 }}>
           Title
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            placeholder="e.g., Rooftop Lounge"
+            placeholder="Rooftop Lounge"
             style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
           />
         </label>
@@ -149,7 +158,7 @@ export default function ListYourSpacePage() {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={saving}
           style={{
             background: '#2563eb',
             color: 'white',
@@ -157,12 +166,13 @@ export default function ListYourSpacePage() {
             borderRadius: 10,
             border: 'none',
             fontWeight: 600,
-            cursor: loading ? 'not-allowed' : 'pointer'
+            cursor: saving ? 'not-allowed' : 'pointer',
           }}
         >
-          {loading ? 'Creating…' : 'Create Listing'}
+          {saving ? 'Creating…' : 'Create Listing'}
         </button>
       </form>
     </main>
   );
 }
+
