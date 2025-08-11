@@ -46,3 +46,6 @@ export default function DashboardPage() {
     </main>
   );
 }
+<button onClick={() => supabase.auth.signOut().then(() => router.replace('/login'))}>
+  Sign out
+</button>
