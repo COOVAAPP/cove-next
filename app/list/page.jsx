@@ -1,116 +1,168 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
-export default function ListYourSpace() {
+export default function ListYourSpacePage() {
   const router = useRouter();
-  const fileRef = useRef(null);
+
   const [title, setTitle] = useState('');
-  const [desc, setDesc]   = useState('');
-  const [price, setPrice] = useState('');
-  const [loc, setLoc]     = useState('');
+  const [description, setDescription] = useState('');
+  const [pricePerHour, setPricePerHour] = useState('');
+  const [location, setLocation] = useState('');
+  const [file, setFile] = useState(null);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
-  const onSubmit = async (e) => {
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) router.replace('/login');
+    })();
+  }, [router]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErr('');
     setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
 
-      let imageUrl = '';
-      const file = fileRef.current?.files?.[0];
-      if (file) {
-        const path = `${user.id}/${crypto.randomUUID()}-${file.name}`;
-        const { error: upErr } = await supabase
-          .storage.from('listing-images')
-          .upload(path, file, { cacheControl: '3600', upsert: false });
-        if (upErr) throw upErr;
-        const { data: pub } = supabase.storage.from('listing-images').getPublicUrl(path);
-        imageUrl = pub.publicUrl;
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth.user;
+      if (!user) {
+        router.replace('/login');
+        return;
       }
 
-      const { data, error } = await supabase
-        .from('listings')
+      // Upload image (optional)
+      let image_url = null;
+      if (file) {
+        const ext = file.name.split('.').pop();
+        const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase
+          .storage
+          .from('listing-images')
+          .upload(path, file, { contentType: file.type, upsert: false });
+        if (upErr) throw upErr;
+
+        const { data: pub } = supabase
+          .storage
+          .from('listing-images')
+          .getPublicUrl(path);
+        image_url = pub.publicUrl;
+      }
+
+      // Insert listing
+      const { data: inserted, error: insErr } = await supabase
+        .from('public.listings')
         .insert({
-          id: crypto.randomUUID(),
           owner_id: user.id,
           title,
-          description: desc,
-          price_per_hour: Number(price) || null,
-          location: loc,
-          image_url: imageUrl
+          description,
+          price_per_hour: pricePerHour ? Number(pricePerHour) : null,
+          location,
+          image_url
         })
         .select('id')
         .single();
-      if (error) throw error;
 
-      router.push(`/listings/${data.id}`);
+      if (insErr) throw insErr;
+
+      router.push(`/listings/${inserted.id}`);
     } catch (e2) {
-      setErr(e2.message ?? 'Failed to create listing');
+      setErr(e2.message ?? 'Error creating listing');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main style={{ padding: 24, maxWidth: 760, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 16 }}>List Your Space</h1>
+    <main style={{ maxWidth: 720, margin: '40px auto', padding: 24 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>List Your Space</h1>
 
-      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
-        <input
-          required
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          placeholder="Title (e.g., Modern Studio Loft)"
-          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
-        />
-        <textarea
-          value={desc}
-          onChange={e => setDesc(e.target.value)}
-          placeholder="Description"
-          rows={4}
-          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
-        />
-        <input
-          type="number"
-          value={price}
-          onChange={e => setPrice(e.target.value)}
-          placeholder="Price per hour"
-          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
-        />
-        <input
-          value={loc}
-          onChange={e => setLoc(e.target.value)}
-          placeholder="Location (City, ST)"
-          style={{ padding: 10, border: '1px solid #ddd', borderRadius: 6 }}
-        />
+      {err ? (
+        <div style={{ background: '#fee2e2', color: '#991b1b', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          {err}
+        </div>
+      ) : null}
 
-        <input type="file" ref={fileRef} accept="image/*" />
+      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 16 }}>
+        <label style={{ display: 'grid', gap: 6 }}>
+          Title
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            placeholder="e.g., Rooftop Lounge"
+            style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
+          />
+        </label>
 
-        {err && <div style={{ color: 'crimson' }}>{err}</div>}
+        <label style={{ display: 'grid', gap: 6 }}>
+          Description
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            placeholder="Describe your space, features, rules…"
+            style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
+          />
+        </label>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            Price per hour (USD)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={pricePerHour}
+              onChange={(e) => setPricePerHour(e.target.value)}
+              placeholder="85"
+              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6 }}>
+            Location
+            <input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              required
+              placeholder="City, State"
+              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
+            />
+          </label>
+        </div>
+
+        <label style={{ display: 'grid', gap: 6 }}>
+          Cover image (JPEG/PNG)
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            style={{ padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+          />
+        </label>
 
         <button
           type="submit"
           disabled={loading}
           style={{
             background: '#2563eb',
-            color: '#fff',
-            padding: '10px 16px',
-            borderRadius: 6,
-            fontWeight: 600,
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: 10,
             border: 'none',
-            cursor: 'pointer'
+            fontWeight: 600,
+            cursor: loading ? 'not-allowed' : 'pointer'
           }}
         >
-          {loading ? 'Uploading…' : 'Create Listing'}
+          {loading ? 'Creating…' : 'Create Listing'}
         </button>
       </form>
     </main>
   );
 }
-
