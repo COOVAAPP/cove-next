@@ -1,15 +1,15 @@
-'use client'
-import { supabase } from '@/lib/supabaseClient'
+'use client';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function Login() {
   const signInWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')}/dashboard`
-      }
-    })
-  }
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')}/dashboard`,
+      },
+    });
+  };
 
   return (
     <main style={{ padding: 24 }}>
@@ -21,5 +21,5 @@ export default function Login() {
         Sign in with Google
       </button>
     </main>
-  )
+  );
 }
