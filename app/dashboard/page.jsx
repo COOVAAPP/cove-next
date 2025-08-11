@@ -11,18 +11,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
+
+    const loadUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!mounted) return;
       if (!user) router.replace('/login');
-      else setUser(user);
+      setUser(user);
       setLoading(false);
     };
-    load();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session?.user) router.replace('/login');
-      else setUser(session.user);
+    loadUser();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
     });
 
     return () => {
@@ -31,18 +32,17 @@ export default function DashboardPage() {
     };
   }, [router]);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  };
+  if (loading) {
+    return <main style={{ padding: 24 }}>Loading...</main>;
+  }
 
-  if (loading) return <main style={{ padding: 24 }}>Loading…</main>;
+  if (!user) {
+    return <main style={{ padding: 24 }}>Not signed in</main>;
+  }
 
   return (
     <main style={{ padding: 24 }}>
-      <h1>Dashboard</h1>
-      <p>Signed in as <strong>{user?.email}</strong></p>
-      <button onClick={signOut} style={{ marginTop: 12 }}>Sign out</button>
+      <h1>Welcome, {user.email}</h1>
     </main>
   );
 }
