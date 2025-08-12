@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
-export default function ListYourSpace() {
+export default function ListYourSpacePage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -17,35 +17,41 @@ export default function ListYourSpace() {
   const [location, setLocation] = useState('');
   const [imageUrl, setImageUrl] = useState('');
 
-  // Load / watch auth session and stop the spinner in all cases
   useEffect(() => {
     let active = true;
 
     async function load() {
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
+      try {
+        const { data: { session } = { session: null } } =
+          await supabase.auth.getSession();
 
-      if (!data?.session) {
-        setLoading(false);            // stop spinner
-        router.replace('/login');     // bounce to login
-        return;
+        if (!active) return;
+
+        if (!session) {
+          setLoading(false);        // stop spinner so we can render something
+          router.replace('/login'); // bounce to login
+          return;
+        }
+
+        setSession(session);
+        setLoading(false);
+      } catch (err) {
+        console.error('load session error:', err);
+        setLoading(false);
       }
-
-      setSession(data.session);
-      setLoading(false);
     }
 
     load();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       if (!active) return;
-      if (!sess) {
+      if (!s) {
         setSession(null);
         setLoading(false);
         router.replace('/login');
         return;
       }
-      setSession(sess);
+      setSession(s);
     });
 
     return () => {
@@ -54,35 +60,34 @@ export default function ListYourSpace() {
     };
   }, [router]);
 
-  if (loading) {
-    return <main style={{ padding: 24 }}>Loading…</main>;
-  }
+  if (loading) return <main style={{ padding: 24 }}>Loading…</main>;
 
   async function onSubmit(e) {
     e.preventDefault();
     if (!session?.user?.id) return;
 
-    const { data, error } = await supabase
-      .from('listings')
-      .insert([
-        {
-          owner_id: session.user.id,
-          title,
-          description,
-          price_per_hour: Number(price) || 0,
-          location,
-          image_url: imageUrl
-        }
-      ])
-      .select('id')
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('listings')
+        .insert([
+          {
+            owner_id: session.user.id,
+            title,
+            description,
+            price_per_hour: Number(price) || 0,
+            location,
+            image_url: imageUrl
+          }
+        ])
+        .select('id')
+        .single();
 
-    if (error) {
-      alert(error.message);
-      return;
+      if (error) throw error;
+      router.push(`/listings/${data.id}`);
+    } catch (err) {
+      console.error('create listing error:', err);
+      alert(err.message || 'Failed to create listing');
     }
-
-    router.push(`/listings/${data.id}`);
   }
 
   return (
@@ -164,3 +169,4 @@ export default function ListYourSpace() {
     </main>
   );
 }
+
