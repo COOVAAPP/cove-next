@@ -17,7 +17,7 @@ export default function Home(){
       <p><Link className="btn primary" href="/listings">Browse Listings</Link></p>
     </section>
     <section>
-      <h2>Latest Listings</h2>
+      <h2>Latest Listings . v2</h2>
       <div className="grid">
         {listings.map((l)=>(
           <Link href={`/listings/${l.id}`} key={l.id} className="card">
