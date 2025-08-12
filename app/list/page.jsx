@@ -1,173 +1,153 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
-export default function ListYourSpacePage() {
+export default function ListYourSpace() {
   const router = useRouter();
-  const [authChecked, setAuthChecked] = useState(false);
-  const [user, setUser] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(null);
 
   // form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [pricePerHour, setPricePerHour] = useState('');
+  const [price, setPrice] = useState('');
   const [location, setLocation] = useState('');
-  const [file, setFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
 
+  // Load / watch auth session and stop the spinner in all cases
   useEffect(() => {
-    let unsub;
+    let active = true;
 
-    (async () => {
+    async function load() {
       const { data } = await supabase.auth.getSession();
-      setUser(data?.session?.user ?? null);
-      setAuthChecked(true);                        // <-- never leave the UI stuck
+      if (!active) return;
 
-      if (!data?.session?.user) {
-        // small delay to avoid race with router
-        setTimeout(() => router.replace('/login?next=/list'), 50);
+      if (!data?.session) {
+        setLoading(false);            // stop spinner
+        router.replace('/login');     // bounce to login
+        return;
       }
-    })();
 
-    const sub = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setAuthChecked(true);
-      if (!session?.user) router.replace('/login?next=/list');
+      setSession(data.session);
+      setLoading(false);
+    }
+
+    load();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
+      if (!active) return;
+      if (!sess) {
+        setSession(null);
+        setLoading(false);
+        router.replace('/login');
+        return;
+      }
+      setSession(sess);
     });
-    unsub = sub?.data?.subscription;
 
-    return () => { unsub?.unsubscribe?.(); };
+    return () => {
+      active = false;
+      sub?.subscription?.unsubscribe?.();
+    };
   }, [router]);
 
-  if (!authChecked) {
-    return <main style={{ padding: 24 }}>Checking account…</main>;
+  if (loading) {
+    return <main style={{ padding: 24 }}>Loading…</main>;
   }
 
-  if (!user) {
-    return <main style={{ padding: 24 }}>Redirecting to login…</main>;
-  }
-
-  const onSubmit = async (e) => {
+  async function onSubmit(e) {
     e.preventDefault();
-    setErr('');
-    setSaving(true);
-    try {
-      let image_url = null;
+    if (!session?.user?.id) return;
 
-      if (file) {
-        const ext = file.name.split('.').pop();
-        const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
-
-        const { error: upErr } = await supabase
-          .storage.from('listing-images')
-          .upload(path, file, { contentType: file.type, upsert: false });
-        if (upErr) throw upErr;
-
-        const { data: pub } = supabase
-          .storage.from('listing-images')
-          .getPublicUrl(path);
-
-        image_url = pub.publicUrl;
-      }
-
-      const { data: inserted, error: insErr } = await supabase
-        .from('public.listings')
-        .insert({
-          owner_id: user.id,
+    const { data, error } = await supabase
+      .from('listings')
+      .insert([
+        {
+          owner_id: session.user.id,
           title,
           description,
-          price_per_hour: pricePerHour ? Number(pricePerHour) : null,
+          price_per_hour: Number(price) || 0,
           location,
-          image_url,
-        })
-        .select('id')
-        .single();
+          image_url: imageUrl
+        }
+      ])
+      .select('id')
+      .single();
 
-      if (insErr) throw insErr;
-
-      router.push(`/listings/${inserted.id}`);
-    } catch (e) {
-      setErr(e.message ?? 'Error creating listing');
-    } finally {
-      setSaving(false);
+    if (error) {
+      alert(error.message);
+      return;
     }
-  };
+
+    router.push(`/listings/${data.id}`);
+  }
 
   return (
-    <main style={{ maxWidth: 720, margin: '40px auto', padding: 24 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>List Your Space</h1>
+    <main style={{ padding: 24, maxWidth: 720, margin: '0 auto' }}>
+      <h1 style={{ marginBottom: 16 }}>List Your Space</h1>
 
-      {err && (
-        <div style={{ background: '#fee2e2', color: '#991b1b', padding: 12, borderRadius: 8, marginBottom: 16 }}>
-          {err}
-        </div>
-      )}
-
-      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 16 }}>
-        <label style={{ display: 'grid', gap: 6 }}>
+      <form onSubmit={onSubmit}>
+        <label style={{ display: 'block', marginBottom: 12 }}>
           Title
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            placeholder="Rooftop Lounge"
-            style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
           />
         </label>
 
-        <label style={{ display: 'grid', gap: 6 }}>
+        <label style={{ display: 'block', marginBottom: 12 }}>
           Description
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            placeholder="Describe your space, features, rules…"
-            style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
+            required
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
           />
         </label>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <label style={{ display: 'grid', gap: 6 }}>
-            Price per hour (USD)
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={pricePerHour}
-              onChange={(e) => setPricePerHour(e.target.value)}
-              placeholder="85"
-              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
-            />
-          </label>
-
-          <label style={{ display: 'grid', gap: 6 }}>
-            Location
-            <input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              required
-              placeholder="City, State"
-              style={{ padding: 10, border: '1px solid #ddd', borderRadius: 8 }}
-            />
-          </label>
-        </div>
-
-        <label style={{ display: 'grid', gap: 6 }}>
-          Cover image (JPEG/PNG)
+        <label style={{ display: 'block', marginBottom: 12 }}>
+          Price per hour (USD)
           <input
-            type="file"
-            accept="image/jpeg,image/png"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            style={{ padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            type="number"
+            min="0"
+            step="1"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            required
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+          />
+        </label>
+
+        <label style={{ display: 'block', marginBottom: 12 }}>
+          Location
+          <input
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            required
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+          />
+        </label>
+
+        <label style={{ display: 'block', marginBottom: 16 }}>
+          Cover Image URL (JPEG/PNG)
+          <input
+            type="url"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            placeholder="https://…"
+            required
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
           />
         </label>
 
         <button
           type="submit"
-          disabled={saving}
           style={{
             background: '#2563eb',
             color: 'white',
@@ -175,10 +155,10 @@ export default function ListYourSpacePage() {
             borderRadius: 10,
             border: 'none',
             fontWeight: 600,
-            cursor: saving ? 'not-allowed' : 'pointer',
+            cursor: 'pointer'
           }}
         >
-          {saving ? 'Creating…' : 'Create Listing'}
+          Create Listing
         </button>
       </form>
     </main>
