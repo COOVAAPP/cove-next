@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import supabase from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+import * as SB from '@/lib/supabaseClient';
+
+// ---- Robust client resolver (works whether you exported default or named)
+const supabase =
+  SB.default ??
+  SB.supabase ??
+  createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
+  );
 
 export default function ListYourSpace() {
   const router = useRouter();
@@ -10,16 +21,18 @@ export default function ListYourSpace() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
-  // ---- Auth gate (never hangs, always clears loading)
+  // ---- Auth gate (never throws, never hangs)
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
+        if (!supabase) throw new Error('Supabase client unavailable');
+
         const { data, error } = await supabase.auth.getSession();
         if (error) console.error('getSession error:', error);
-        if (cancelled) return;
 
+        if (cancelled) return;
         const u = data?.session?.user ?? null;
         setUser(u);
         setLoading(false);
@@ -27,19 +40,22 @@ export default function ListYourSpace() {
         if (!u) router.replace('/login');
       } catch (e) {
         console.error('getSession threw:', e);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setUser(null);
+          setLoading(false);
+        }
       }
     };
 
     load();
 
-    // also react to future changes
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
-      if (cancelled) return;
-      const u = sess?.user ?? null;
-      setUser(u);
-      if (!u) router.replace('/login');
-    });
+    const { data: sub } =
+      supabase?.auth?.onAuthStateChange?.((_evt, sess) => {
+        if (cancelled) return;
+        const u = sess?.user ?? null;
+        setUser(u);
+        if (!u) router.replace('/login');
+      }) ?? { data: null };
 
     return () => {
       cancelled = true;
@@ -56,12 +72,10 @@ export default function ListYourSpace() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    if (!user) {
-      router.replace('/login');
-      return;
-    }
-    setSaving(true);
+    if (!user) return router.replace('/login');
+    if (!supabase) return alert('Supabase client not ready.');
 
+    setSaving(true);
     const { error } = await supabase.from('listings').insert({
       id: crypto.randomUUID(),
       owner_id: user.id,
@@ -71,32 +85,20 @@ export default function ListYourSpace() {
       location,
       image_url: imageUrl || null,
     });
-
     setSaving(false);
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    if (error) return alert(error.message);
     router.push('/');
   };
 
-  // ---- UI
   if (loading) return <main style={{ padding: 24 }}>Loading…</main>;
-
-  if (!user) {
-    // Fallback in case redirect didn’t happen
+  if (!user)
     return (
       <main style={{ padding: 24 }}>
         <h2>You need to sign in</h2>
-        <p>
-          <a href="/login" style={{ color: '#2563eb', fontWeight: 600 }}>
-            Go to Login
-          </a>
-        </p>
+        <a href="/login" style={{ color: '#2563eb', fontWeight: 600 }}>Go to Login</a>
       </main>
     );
-  }
 
   return (
     <main style={{ padding: 24, maxWidth: 680, margin: '0 auto' }}>
@@ -104,50 +106,23 @@ export default function ListYourSpace() {
 
       <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
         <label style={{ display: 'block', marginBottom: 12 }}>
-          Title
-          <br />
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8 }}
-          />
+          Title<br />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required style={{ width: '100%', padding: 8 }} />
         </label>
 
         <label style={{ display: 'block', marginBottom: 12 }}>
-          Price per hour (USD)
-          <br />
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8 }}
-          />
+          Price per hour (USD)<br />
+          <input type="number" min="0" step="1" value={price} onChange={(e) => setPrice(e.target.value)} required style={{ width: '100%', padding: 8 }} />
         </label>
 
         <label style={{ display: 'block', marginBottom: 12 }}>
-          Location
-          <br />
-          <input
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8 }}
-          />
+          Location<br />
+          <input value={location} onChange={(e) => setLocation(e.target.value)} required style={{ width: '100%', padding: 8 }} />
         </label>
 
         <label style={{ display: 'block', marginBottom: 12 }}>
-          Cover image URL (optional)
-          <br />
-          <input
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="https://…"
-            style={{ width: '100%', padding: 8 }}
-          />
+          Cover image URL (optional)<br />
+          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" style={{ width: '100%', padding: 8 }} />
         </label>
 
         <button
