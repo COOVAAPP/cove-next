@@ -4,9 +4,9 @@ export default function RootLayout({ children }) {
     <nav className="nav">
       <div className="brand"><div className="logo">C</div><Link href="/">COOVA</Link></div>
       <div style={{display:'flex', gap:8}}>
-        <Link className="btn" href="/listings">Browse</Link>
+        <Link className="btn" href="/list">Browse</Link>
         <Link className="btn" href="/login">Login</Link>
-        <Link className="btn primary" href="/listings/new">List Your Space</Link>
+        <Link className="btn primary" href="/list/new">List Your Space</Link>
       </div>
     </nav>{children}
   </div></body></html>);
