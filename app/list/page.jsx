@@ -1,144 +1,164 @@
+// app/list/page.jsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-import * as SB from '@/lib/supabaseClient';
+import supabase from '@/lib/supabaseClient';
 
-// ---- Robust client resolver (works whether you exported default or named)
-const supabase =
-  SB.default ??
-  SB.supabase ??
-  createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-    { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
-  );
-
-export default function ListYourSpace() {
+export default function ListYourSpacePage() {
   const router = useRouter();
-
-  const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // ---- Auth gate (never throws, never hangs)
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        if (!supabase) throw new Error('Supabase client unavailable');
-
-        const { data, error } = await supabase.auth.getSession();
-        if (error) console.error('getSession error:', error);
-
-        if (cancelled) return;
-        const u = data?.session?.user ?? null;
-        setUser(u);
-        setLoading(false);
-
-        if (!u) router.replace('/login');
-      } catch (e) {
-        console.error('getSession threw:', e);
-        if (!cancelled) {
-          setUser(null);
-          setLoading(false);
-        }
-      }
-    };
-
-    load();
-
-    const { data: sub } =
-      supabase?.auth?.onAuthStateChange?.((_evt, sess) => {
-        if (cancelled) return;
-        const u = sess?.user ?? null;
-        setUser(u);
-        if (!u) router.replace('/login');
-      }) ?? { data: null };
-
-    return () => {
-      cancelled = true;
-      sub?.subscription?.unsubscribe?.();
-    };
-  }, [router]);
-
-  // ---- Form state
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [location, setLocation] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [saving, setSaving] = useState(false);
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    if (!user) return router.replace('/login');
-    if (!supabase) return alert('Supabase client not ready.');
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState('');
 
-    setSaving(true);
-    const { error } = await supabase.from('listings').insert({
-      id: crypto.randomUUID(),
-      owner_id: user.id,
-      title,
-      description: '',
-      price_per_hour: Number(price) || 0,
-      location,
-      image_url: imageUrl || null,
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!mounted) return;
+      if (!data?.user) router.replace('/login');
+      else setUser(data.user);
     });
-    setSaving(false);
+    return () => { mounted = false; };
+  }, [router]);
 
-    if (error) return alert(error.message);
-    router.push('/');
-  };
+  const cleanName = (name) => name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
 
-  if (loading) return <main style={{ padding: 24 }}>Loading…</main>;
-  if (!user)
-    return (
-      <main style={{ padding: 24 }}>
-        <h2>You need to sign in</h2>
-        <a href="/login" style={{ color: '#2563eb', fontWeight: 600 }}>Go to Login</a>
-      </main>
-    );
+  async function uploadImage() {
+    if (!file) return null;
+    const path = `${user.id}/${crypto.randomUUID()}-${cleanName(file.name)}`;
+    const { error: upErr } = await supabase
+      .storage
+      .from('listing-images')
+      .upload(path, file, { upsert: false, contentType: file.type || 'image/jpeg' });
+    if (upErr) throw upErr;
+    const { data } = supabase.storage.from('listing-images').getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    if (!user) return;
+    setLoading(true);
+    try {
+      const image_url = await uploadImage();
+
+      const { data, error } = await supabase
+        .from('listings')
+        .insert({
+          owner_id: user.id,
+          title,
+          description,
+          price_per_hour: price ? Number(price) : null,
+          location,
+          image_url: image_url || null
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      router.push(`/listings/${data.id}`);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Error creating listing');
+      setLoading(false);
+    }
+  }
 
   return (
-    <main style={{ padding: 24, maxWidth: 680, margin: '0 auto' }}>
+    <main style={{ padding: 24, maxWidth: 720, margin: '0 auto' }}>
       <h1>List Your Space</h1>
 
       <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
         <label style={{ display: 'block', marginBottom: 12 }}>
-          Title<br />
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required style={{ width: '100%', padding: 8 }} />
+          Title
+          <input
+            required
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+          />
         </label>
 
         <label style={{ display: 'block', marginBottom: 12 }}>
-          Price per hour (USD)<br />
-          <input type="number" min="0" step="1" value={price} onChange={(e) => setPrice(e.target.value)} required style={{ width: '100%', padding: 8 }} />
+          Description
+          <textarea
+            required
+            rows={4}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+          />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          Location<br />
-          <input value={location} onChange={(e) => setLocation(e.target.value)} required style={{ width: '100%', padding: 8 }} />
+        <div style={{ display: 'flex', gap: 12 }}>
+          <label style={{ flex: 1, marginBottom: 12 }}>
+            Price per hour
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            />
+          </label>
+
+          <label style={{ flex: 1, marginBottom: 12 }}>
+            Location
+            <input
+              required
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            />
+          </label>
+        </div>
+
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Cover image
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              setFile(f);
+              setPreview(f ? URL.createObjectURL(f) : '');
+            }}
+          />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          Cover image URL (optional)<br />
-          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" style={{ width: '100%', padding: 8 }} />
-        </label>
+        {preview && (
+          <div style={{ margin: '12px 0' }}>
+            <img
+              src={preview}
+              alt="Preview"
+              style={{ width: '100%', maxHeight: 280, objectFit: 'cover', borderRadius: 8, border: '1px solid #eee' }}
+            />
+          </div>
+        )}
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={loading || !user}
           style={{
+            marginTop: 16,
             background: '#2563eb',
-            color: 'white',
+            color: '#fff',
             padding: '12px 16px',
-            borderRadius: 8,
+            borderRadius: 10,
             border: 'none',
             fontWeight: 600,
-            cursor: saving ? 'not-allowed' : 'pointer',
+            cursor: loading ? 'not-allowed' : 'pointer'
           }}
         >
-          {saving ? 'Saving…' : 'Create Listing'}
+          {loading ? 'Saving…' : 'Create Listing'}
         </button>
       </form>
     </main>
