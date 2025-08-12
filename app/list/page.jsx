@@ -4,120 +4,83 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 
-export default function ListYourSpacePage() {
+export default function ListYourSpace() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
 
-  // form state
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [location, setLocation] = useState('');
   const [imageUrl, setImageUrl] = useState('');
 
   useEffect(() => {
-    let active = true;
+    let mounted = true;
 
-    async function load() {
-      try {
-        const { data: { session } = { session: null } } =
-          await supabase.auth.getSession();
+    const init = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
 
-        if (!active) return;
+      setSession(data.session ?? null);
+      setLoading(false);
 
-        if (!session) {
-          setLoading(false);        // stop spinner so we can render something
-          router.replace('/login'); // bounce to login
-          return;
-        }
+      if (!data.session) router.replace('/login');
+    };
 
-        setSession(session);
-        setLoading(false);
-      } catch (err) {
-        console.error('load session error:', err);
-        setLoading(false);
-      }
-    }
-
-    load();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      if (!active) return;
-      if (!s) {
-        setSession(null);
-        setLoading(false);
-        router.replace('/login');
-        return;
-      }
-      setSession(s);
-    });
-
+    init();
     return () => {
-      active = false;
-      sub?.subscription?.unsubscribe?.();
+      mounted = false;
     };
   }, [router]);
 
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    if (!session?.user) return;
+
+    setLoading(true);
+
+    const { error } = await supabase.from('listings').insert({
+      id: crypto.randomUUID(),
+      owner_id: session.user.id,
+      title,
+      description: '',
+      price_per_hour: Number(price) || 0,
+      location,
+      image_url: imageUrl || null,
+    });
+
+    setLoading(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    router.push('/');
+  };
+
   if (loading) return <main style={{ padding: 24 }}>Loading…</main>;
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    if (!session?.user?.id) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('listings')
-        .insert([
-          {
-            owner_id: session.user.id,
-            title,
-            description,
-            price_per_hour: Number(price) || 0,
-            location,
-            image_url: imageUrl
-          }
-        ])
-        .select('id')
-        .single();
-
-      if (error) throw error;
-      router.push(`/listings/${data.id}`);
-    } catch (err) {
-      console.error('create listing error:', err);
-      alert(err.message || 'Failed to create listing');
-    }
-  }
-
   return (
-    <main style={{ padding: 24, maxWidth: 720, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: 16 }}>List Your Space</h1>
+    <main style={{ padding: 24, maxWidth: 680, margin: '0 auto' }}>
+      <h1>List Your Space</h1>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
         <label style={{ display: 'block', marginBottom: 12 }}>
           Title
+          <br />
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
-          />
-        </label>
-
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          Description
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            style={{ width: '100%', padding: 8 }}
           />
         </label>
 
         <label style={{ display: 'block', marginBottom: 12 }}>
           Price per hour (USD)
+          <br />
           <input
             type="number"
             min="0"
@@ -125,48 +88,47 @@ export default function ListYourSpacePage() {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            style={{ width: '100%', padding: 8 }}
           />
         </label>
 
         <label style={{ display: 'block', marginBottom: 12 }}>
           Location
+          <br />
           <input
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            style={{ width: '100%', padding: 8 }}
           />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 16 }}>
-          Cover Image URL (JPEG/PNG)
+        <label style={{ display: 'block', marginBottom: 12 }}>
+          Cover image URL (optional)
+          <br />
           <input
-            type="url"
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
             placeholder="https://…"
-            required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
+            style={{ width: '100%', padding: 8 }}
           />
         </label>
 
         <button
           type="submit"
+          disabled={loading}
           style={{
             background: '#2563eb',
             color: 'white',
             padding: '12px 16px',
-            borderRadius: 10,
+            borderRadius: 8,
             border: 'none',
             fontWeight: 600,
-            cursor: 'pointer'
           }}
         >
-          Create Listing
+          {loading ? 'Saving…' : 'Create Listing'}
         </button>
       </form>
     </main>
   );
 }
-
