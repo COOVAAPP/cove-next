@@ -13,10 +13,9 @@ export default function DashboardPage() {
     let mounted = true;
 
     const loadUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data } = await supabase.auth.getSession();
       if (!mounted) return;
-      if (!user) router.replace('/login');
-      setUser(user);
+      setUser(data?.session?.user ?? null);
       setLoading(false);
     };
 
@@ -28,24 +27,44 @@ export default function DashboardPage() {
 
     return () => {
       mounted = false;
-      sub.subscription.unsubscribe();
+      sub?.subscription?.unsubscribe?.();
     };
-  }, [router]);
+  }, []);
 
   if (loading) {
     return <main style={{ padding: 24 }}>Loading...</main>;
   }
 
   if (!user) {
-    return <main style={{ padding: 24 }}>Not signed in</main>;
+    return (
+      <main style={{ padding: 24 }}>
+        <h1>Not signed in</h1>
+        <a href="/login">Go to login</a>
+      </main>
+    );
   }
 
   return (
     <main style={{ padding: 24 }}>
-      <h1>Welcome, {user.email}</h1>
+      <h1>Welcome</h1>
+      <p>{user.email}</p>
+      <button
+        onClick={() =>
+          supabase.auth.signOut().then(() => router.replace('/login'))
+        }
+        style={{
+          marginTop: 12,
+          background: '#2563eb',
+          color: 'white',
+          border: 'none',
+          padding: '10px 12px',
+          borderRadius: 8,
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}
+      >
+        Sign out
+      </button>
     </main>
   );
 }
-<button onClick={() => supabase.auth.signOut().then(() => router.replace('/login'))}>
-  Sign out
-</button>
