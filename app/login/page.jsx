@@ -1,9 +1,14 @@
+"use client";
+
 import LoginComponent from "./LoginComponent";
 
-export const dynamic = "force-dynamic";
+export default function Page({ searchParams }) {
+  // Force default to /list (never /dashboard)
+  const redirect =
+    typeof searchParams?.redirect === "string" && searchParams.redirect
+      ? searchParams.redirect
+      : "/list";
 
-export default function Page() {
-  return <LoginComponent />;
+  return <LoginComponent redirect={redirect} />;
 }
-
 
