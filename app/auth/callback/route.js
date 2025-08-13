@@ -1,17 +1,22 @@
-// app/auth/callback/route.js
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { getServerSupabase } from "@/lib/supabaseServer";
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-/**
- * We don't do any rendering here. We just bounce back to the app.
- * Supabase finishes the OAuth in their hosted page, then redirects here.
- * We simply forward the user to the dashboard (or provided redirect).
- */
 export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  const redirect = searchParams.get('redirect') || '/dashboard';
+  const url = new URL(req.url);
+  const code = url.searchParams.get("code");
+  const redirect = url.searchParams.get("redirect") || "/dashboard";
+
+  if (!code) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  const supabase = getServerSupabase();
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) {
+    console.error("exchangeCodeForSession error:", error.message);
+    return NextResponse.redirect(new URL("/login?error=oauth", req.url));
+  }
+
   return NextResponse.redirect(new URL(redirect, req.url));
 }
 

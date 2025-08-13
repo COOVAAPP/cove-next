@@ -1,142 +1,117 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function ListYourSpace() {
+const BUCKET = 'listing-images';
+
+export default function ListYourSpacePage() {
   const router = useRouter();
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [user, setUser] = useState(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [location, setLocation] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
     (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (!data?.session) {
-        router.replace('/login');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace('/login?redirect=/list');
         return;
       }
-      setSession(data.session);
-      setLoading(false);
+      setUser(session.user);
     })();
-    return () => { mounted = false; };
   }, [router]);
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    if (!session?.user) return;
+  const onSelectFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+  };
 
-    setError('');
+  const createListing = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+
     setSaving(true);
+
+    let publicUrl = '';
+    if (file) {
+      const path = `${user.id}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
+      if (upErr) {
+        alert(`Upload failed: ${upErr.message}`);
+        setSaving(false);
+        return;
+      }
+      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      publicUrl = pub.publicUrl;
+    }
 
     const { data, error } = await supabase
       .from('listings')
       .insert({
-        owner_id: session.user.id,
+        owner_id: user.id,
         title,
         description,
-        price_per_hour: price ? Number(price) : null,
+        price_per_hour: price === '' ? null : Number(price),
         location,
-        image_url: imageUrl || null
+        image_url: publicUrl,
       })
       .select('id')
       .single();
 
-    setSaving(false);
-
-    if (error) { setError(error.message); return; }
+    if (error) {
+      alert('Could not save: ' + error.message);
+      setSaving(false);
+      return;
+    }
 
     router.push(`/listings/${data.id}`);
-  }
-
-  if (loading) return <main style={{ padding: 24 }}>Loading…</main>;
+  };
 
   return (
-    <main style={{ padding: 24, maxWidth: 720, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 16 }}>List Your Space</h1>
+    <main style={{ padding: 24, maxWidth: 760, margin: '0 auto' }}>
+      <h1>List your space</h1>
 
-      <form onSubmit={onSubmit}>
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600 }}>Title</div>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
-          />
+      <form onSubmit={createListing} style={{ display: 'grid', gap: 16, marginTop: 16 }}>
+        <label>Title
+          <input value={title} onChange={(e)=>setTitle(e.target.value)} required style={input} />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600 }}>Description</div>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
-          />
+        <label>Description
+          <textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows={5} style={input} />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600 }}>Price per hour ($)</div>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
-          />
+        <label>Price per hour
+          <input type="number" min="0" step="1" value={price} onChange={(e)=>setPrice(e.target.value)} style={input} />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600 }}>Location</div>
-          <input
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            required
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
-          />
+        <label>Location
+          <input value={location} onChange={(e)=>setLocation(e.target.value)} style={input} />
         </label>
 
-        <label style={{ display: 'block', marginBottom: 16 }}>
-          <div style={{ fontWeight: 600 }}>Image URL (optional)</div>
-          <input
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="https://…"
-            style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 8 }}
-          />
+        <label>Cover photo
+          <input type="file" accept="image/*" onChange={onSelectFile} />
         </label>
 
-        {error && <div style={{ color: '#b00020', marginBottom: 12 }}>{error}</div>}
+        {preview ? <img src={preview} alt="preview" style={{ maxWidth: '100%', borderRadius: 8 }} /> : null}
 
-        <button
-          type="submit"
-          disabled={saving}
-          style={{
-            background: '#2563eb',
-            color: '#fff',
-            padding: '12px 16px',
-            border: 'none',
-            borderRadius: 10,
-            fontWeight: 700,
-            cursor: saving ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {saving ? 'Saving…' : 'Create Listing'}
-        </button>
+        <button disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Create listing'}</button>
       </form>
     </main>
   );
 }
+
+const input = { display: 'block', width: '100%', marginTop: 6, padding: 10, border: '1px solid #ddd', borderRadius: 6 };
+const btnPrimary = { padding: '12px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 };
+
+
 
