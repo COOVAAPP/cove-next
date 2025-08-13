@@ -1,117 +1,169 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
-
-const BUCKET = 'listing-images';
+import supabase from '@/lib/supabaseClient';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function ListYourSpacePage() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [location, setLocation] = useState('');
   const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState('');
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.replace('/login?redirect=/list');
-        return;
-      }
-      setUser(session.user);
-    })();
-  }, [router]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const onSelectFile = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-  };
-
-  const createListing = async (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
-    if (!user) return;
+    setError('');
+    setLoading(true);
 
-    setSaving(true);
-
-    let publicUrl = '';
-    if (file) {
-      const path = `${user.id}/${Date.now()}_${file.name}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
-      if (upErr) {
-        alert(`Upload failed: ${upErr.message}`);
-        setSaving(false);
+    try {
+      // 1) Require login
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userRes?.user) {
+        setError('Please log in first.');
+        setLoading(false);
+        router.push('/login?redirect=/list');
         return;
       }
-      const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      publicUrl = pub.publicUrl;
+      const user = userRes.user;
+
+      // 2) Upload image (optional)
+      let publicUrl = '';
+      if (file) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const path = `${user.id}/${uuidv4()}.${ext}`;
+
+        const { error: upErr } = await supabase
+          .storage
+          .from('listing-images')
+          .upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || 'image/jpeg',
+          });
+        if (upErr) throw upErr;
+
+        const { data: urlData } = supabase
+          .storage
+          .from('listing-images')
+          .getPublicUrl(path);
+
+        publicUrl = urlData.publicUrl;
+      }
+
+      // 3) Insert listing
+      const { data: insertData, error: insErr } = await supabase
+        .from('listings')
+        .insert({
+          owner_id: user.id,
+          title,
+          description,
+          price_per_hour: Number(price) || 0,
+          location,
+          image_url: publicUrl || null,
+        })
+        .select('id')
+        .single();
+
+      if (insErr) throw insErr;
+
+      // 4) Go to the new listing page
+      router.push(`/listings/${insertData.id}`);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Something went wrong.');
+    } finally {
+      setLoading(false);
     }
-
-    const { data, error } = await supabase
-      .from('listings')
-      .insert({
-        owner_id: user.id,
-        title,
-        description,
-        price_per_hour: price === '' ? null : Number(price),
-        location,
-        image_url: publicUrl,
-      })
-      .select('id')
-      .single();
-
-    if (error) {
-      alert('Could not save: ' + error.message);
-      setSaving(false);
-      return;
-    }
-
-    router.push(`/listings/${data.id}`);
   };
 
   return (
-    <main style={{ padding: 24, maxWidth: 760, margin: '0 auto' }}>
-      <h1>List your space</h1>
+    <main style={{ maxWidth: 720, margin: '32px auto', padding: 24 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>List Your Space</h1>
 
-      <form onSubmit={createListing} style={{ display: 'grid', gap: 16, marginTop: 16 }}>
-        <label>Title
-          <input value={title} onChange={(e)=>setTitle(e.target.value)} required style={input} />
+      <form onSubmit={onSubmit}>
+        <label style={{ display: 'block', marginBottom: 10 }}>
+          Title
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            style={{ display: 'block', width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 8, marginTop: 6 }}
+          />
         </label>
 
-        <label>Description
-          <textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows={5} style={input} />
+        <label style={{ display: 'block', marginBottom: 10 }}>
+          Description
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            required
+            style={{ display: 'block', width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 8, marginTop: 6 }}
+          />
         </label>
 
-        <label>Price per hour
-          <input type="number" min="0" step="1" value={price} onChange={(e)=>setPrice(e.target.value)} style={input} />
+        <label style={{ display: 'block', marginBottom: 10 }}>
+          Price per hour (USD)
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            required
+            style={{ display: 'block', width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 8, marginTop: 6 }}
+          />
         </label>
 
-        <label>Location
-          <input value={location} onChange={(e)=>setLocation(e.target.value)} style={input} />
+        <label style={{ display: 'block', marginBottom: 10 }}>
+          Location
+          <input
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            required
+            style={{ display: 'block', width: '100%', padding: 10, border: '1px solid #ddd', borderRadius: 8, marginTop: 6 }}
+          />
         </label>
 
-        <label>Cover photo
-          <input type="file" accept="image/*" onChange={onSelectFile} />
+        <label style={{ display: 'block', marginBottom: 16 }}>
+          Cover image (JPG/PNG)
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            style={{ display: 'block', marginTop: 6 }}
+          />
         </label>
 
-        {preview ? <img src={preview} alt="preview" style={{ maxWidth: '100%', borderRadius: 8 }} /> : null}
+        {error ? (
+          <div style={{ color: '#b00020', marginBottom: 16 }}>{error}</div>
+        ) : null}
 
-        <button disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Create listing'}</button>
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            background: '#2563eb',
+            color: '#fff',
+            padding: '12px 18px',
+            fontWeight: 600,
+            border: 'none',
+            borderRadius: 10,
+            cursor: loading ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {loading ? 'Creating…' : 'Create Listing'}
+        </button>
       </form>
     </main>
   );
 }
-
-const input = { display: 'block', width: '100%', marginTop: 6, padding: 10, border: '1px solid #ddd', borderRadius: 6 };
-const btnPrimary = { padding: '12px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 };
-
 
 
