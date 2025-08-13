@@ -1,3 +1,5 @@
+export const revalidate = 60; // re-gen every 60s
+
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
