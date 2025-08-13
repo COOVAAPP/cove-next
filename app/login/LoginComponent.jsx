@@ -1,51 +1,31 @@
 "use client";
-import { supabase } from "@/lib/supabaseClient";
+
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginComponent() {
-  const searchParams = useSearchParams();
+  const search = useSearchParams();
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const redirect = searchParams.get("redirect") || "/dashboard";
+  const next = search.get("redirect") || "/list";
 
-  const checkSession = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) router.replace(redirect);
-  }, [router, redirect]);
-
-  useEffect(() => { checkSession(); }, [checkSession]);
-
-  const login = async () => {
-    setBusy(true);
+  const signIn = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirect)}`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(
+          next
+        )}`,
       },
     });
-    if (error) {
-      setBusy(false);
-      alert(error.message);
-    }
+    if (error) alert(error.message);
   };
 
   return (
-    <div style={{ maxWidth: 520, margin: "80px auto", padding: 24 }}>
+    <main style={{ maxWidth: 720, margin: "48px auto", padding: 16 }}>
       <h1>Login</h1>
-      <button
-        onClick={login}
-        disabled={busy}
-        style={{
-          marginTop: 16,
-          padding: "10px 14px",
-          borderRadius: 8,
-          border: "1px solid #ccc",
-          cursor: busy ? "not-allowed" : "pointer",
-        }}
-      >
-        {busy ? "Opening Google…" : "Sign in with Google"}
+      <button onClick={signIn} className="btn">
+        Sign in with Google
       </button>
-    </div>
+    </main>
   );
 }
