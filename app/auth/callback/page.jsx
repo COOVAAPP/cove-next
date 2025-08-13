@@ -6,55 +6,46 @@ import { supabase } from "@/lib/supabaseClient";
 
 export default function OAuthCallback() {
   const searchParams = useSearchParams();
-  const [msg, setMsg] = useState("Completing sign-in...");
+  const [msg, setMsg] = useState("Completing sign‑in…");
 
   useEffect(() => {
-    let cancelled = false;
+    (async () => {
+      const redirect = searchParams.get("redirect") || "/list";
+      const code = searchParams.get("code");
 
-    const run = async () => {
-      try {
-        const code = searchParams.get("code");
-        const redirect = searchParams.get("redirect") || "/";
-
-        if (!code) {
-          setMsg("Missing authorization code. Returning to login…");
-          setTimeout(() => (window.location.href = "/login"), 1200);
-          return;
-        }
-
-        // Try exchange using code first
-        let { error } = await supabase.auth.exchangeCodeForSession(code);
-        // Some versions accept the full URL instead of just the code — try that if needed.
-        if (error) {
-          ({ error } = await supabase.auth.exchangeCodeForSession(
-            window.location.href
-          ));
-        }
-        if (error) {
-          setMsg("Sign-in failed. Redirecting to login…");
-          setTimeout(() => (window.location.href = "/login"), 1200);
-          return;
-        }
-
-        // Poll up to 5s for a non-null session (covers Safari/Private timing)
-        const start = Date.now();
-        while (Date.now() - start < 5000) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) break;
-          await new Promise((r) => setTimeout(r, 200));
-        }
-
-        if (!cancelled) window.location.replace(redirect);
-      } catch {
-        setMsg("Unexpected error. Redirecting to login…");
-        setTimeout(() => (window.location.href = "/login"), 1200);
+      if (!code) {
+        // No auth code — go back to login with the intended redirect
+        window.location.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
+        return;
       }
-    };
 
-    run();
-    return () => {
-      cancelled = true;
-    };
+      // Exchange the code for a session (browser cookies)
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) {
+        setMsg("Sign‑in failed. Returning to login…");
+        setTimeout(() => {
+          window.location.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
+        }, 800);
+        return;
+      }
+
+      // Safari: give the cookie/subtle storage a moment to settle
+      await new Promise((r) => setTimeout(r, 400));
+
+      // If session is already visible, go now
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        window.location.replace(redirect);
+        return;
+      }
+
+      // Otherwise listen once, with a fallback
+      const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+        if (s) window.location.replace(redirect);
+      });
+      setTimeout(() => window.location.replace(redirect), 1500);
+      return () => sub.subscription?.unsubscribe();
+    })();
   }, [searchParams]);
 
   return (
