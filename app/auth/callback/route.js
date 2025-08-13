@@ -1,41 +1,18 @@
 // app/auth/callback/route.js
-import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server';
 
-export const dynamic = 'force-dynamic' // prevent static prerender
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
+/**
+ * We don't do any rendering here. We just bounce back to the app.
+ * Supabase finishes the OAuth in their hosted page, then redirects here.
+ * We simply forward the user to the dashboard (or provided redirect).
+ */
 export async function GET(req) {
-  const url = new URL(req.url)
-  const code = url.searchParams.get('code')
-  const redirectTo = url.searchParams.get('redirect') || '/dashboard'
-
-  const cookieStore = cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value
-        },
-        set(name, value, options) {
-          cookieStore.set({ name, value, ...options })
-        },
-        remove(name, options) {
-          cookieStore.delete({ name, ...options })
-        }
-      }
-    }
-  )
-
-  if (code) {
-    // sets sb-access-token / sb-refresh-token cookies
-    await supabase.auth.exchangeCodeForSession(code)
-  }
-
-  const dest = new URL(redirectTo, req.url) // supports absolute or relative
-  return NextResponse.redirect(dest)
+  const { searchParams } = new URL(req.url);
+  const redirect = searchParams.get('redirect') || '/dashboard';
+  return NextResponse.redirect(new URL(redirect, req.url));
 }
 
 
