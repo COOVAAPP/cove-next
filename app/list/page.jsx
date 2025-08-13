@@ -1,38 +1,42 @@
 "use client";
 
-// Prevent any static caching/prerender issues
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
 
 export default function ListPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let unsub;
+    let cancelled = false;
 
-    (async () => {
-      // If we already have a session, render immediately
+    async function check() {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setReady(true);
+
+      if (!session) {
+        router.replace(`/login?redirect=${encodeURIComponent("/list")}`);
         return;
       }
 
-      // Listen for session that arrives right after the callback
-      unsub = supabase.auth.onAuthStateChange((_evt, s) => {
-        if (s) setReady(true);
-      }).data.subscription;
+      if (!cancelled) setReady(true);
+    }
 
-      // Not logged in — send to login and come back to /list
-      router.replace(`/login?redirect=${encodeURIComponent("/list")}`);
-    })();
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session) setReady(true);
+      }
+    );
 
-    return () => unsub?.unsubscribe();
+    check();
+
+    return () => {
+      cancelled = true;
+      authListener.subscription?.unsubscribe();
+    };
   }, [router]);
 
   if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
@@ -44,4 +48,3 @@ export default function ListPage() {
     </main>
   );
 }
-

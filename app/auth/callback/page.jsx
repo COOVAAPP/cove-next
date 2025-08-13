@@ -4,50 +4,53 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
+
 export default function OAuthCallback() {
   const searchParams = useSearchParams();
-  const [msg, setMsg] = useState("Completing sign‑in…");
+  const [msg, setMsg] = useState("Completing sign-in...");
 
   useEffect(() => {
-    let active = true;
+    let cancelled = false;
 
-    (async () => {
+    const run = async () => {
       try {
         const code = searchParams.get("code");
         const redirect = searchParams.get("redirect") || "/";
 
         if (!code) {
-          if (!active) return;
           setMsg("Missing authorization code. Returning to login…");
-          setTimeout(() => (window.location.href = "/login"), 1200);
+          setTimeout(() => {
+            if (!cancelled) window.location.replace("/login");
+          }, 800);
           return;
         }
 
-        // Exchange OAuth code for a session in the browser
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          if (!active) return;
-          setMsg("Sign‑in failed. Redirecting to login…");
-          setTimeout(() => (window.location.href = "/login"), 1200);
+          setMsg("Sign-in failed. Redirecting to login…");
+          setTimeout(() => {
+            if (!cancelled) window.location.replace("/login");
+          }, 1000);
           return;
         }
 
-        // Success — go where the app asked
         window.location.replace(redirect);
       } catch {
-        if (!active) return;
         setMsg("Unexpected error. Redirecting to login…");
-        setTimeout(() => (window.location.href = "/login"), 1200);
+        setTimeout(() => {
+          if (!cancelled) window.location.replace("/login");
+        }, 1000);
       }
-    })();
-
-    return () => {
-      active = false;
     };
+
+    run();
+    return () => { cancelled = true; };
   }, [searchParams]);
 
   return (
-    <div style={{ maxWidth: 460, margin: "60px auto", fontSize: 16 }}>
+    <div style={{ maxWidth: 460, margin: "60px auto", padding: 16, fontSize: 16 }}>
       {msg}
     </div>
   );
