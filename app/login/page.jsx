@@ -1,26 +1,46 @@
 'use client';
 
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function Login() {
-  const signInWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
+export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = searchParams.get('redirect') || '/dashboard';
+
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')}/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback?redirect=${redirectPath}`,
       },
     });
+
+    if (error) {
+      console.error('Error logging in:', error.message);
+      alert('Login failed: ' + error.message);
+    }
   };
 
   return (
-    <main style={{ padding: 24 }}>
+    <div style={{ padding: '2rem', textAlign: 'center' }}>
       <h1>Login</h1>
+      <p>Sign in to access your account.</p>
       <button
-        onClick={signInWithGoogle}
-        style={{ padding: '10px 20px', background: '#4285F4', color: '#fff', border: 'none', borderRadius: 4 }}
+        onClick={handleGoogleLogin}
+        style={{
+          marginTop: '1rem',
+          padding: '0.75rem 1.5rem',
+          backgroundColor: '#4285F4',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          fontSize: '1rem',
+        }}
       >
-        Sign in with Google
+        Continue with Google
       </button>
-    </main>
+    </div>
   );
 }
