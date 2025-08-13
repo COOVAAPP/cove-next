@@ -6,30 +6,32 @@ import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
-  const qp = useSearchParams();
-  const redirectPath = qp.get('redirect') || '/dashboard';
+  const sp = useSearchParams();
+  const redirect = sp.get('redirect') || '/dashboard';
 
-  // If you're already signed in, skip this page
   useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) router.replace(redirectPath);
-    })();
-  }, [router, redirectPath]);
+    const { data: authListener } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session) router.replace(redirect);
+    });
+    return () => authListener.subscription.unsubscribe();
+  }, [redirect, router]);
 
-  const handleGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
+  const onClick = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectPath)}`,
+        redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(
+          redirect
+        )}`,
       },
     });
+    if (error) alert(error.message);
   };
 
   return (
     <main style={{ padding: 24 }}>
       <h1>Login</h1>
-      <button onClick={handleGoogle}>Sign in with Google</button>
+      <button onClick={onClick}>Sign in with Google</button>
     </main>
   );
 }
