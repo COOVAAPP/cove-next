@@ -13,9 +13,8 @@ export default function AuthCallback() {
   useEffect(() => {
     const run = async () => {
       try {
-        // 1) Exchange ?code for a session (required for OAuth v2)
+        // Exchange `code` for a session
         const { error: exErr } = await supabase.auth.exchangeCodeForSession({
-          // Use the full query string (e.g. ?code=...&state=...)
           queryString: window.location.search,
         });
         if (exErr) {
@@ -25,16 +24,15 @@ export default function AuthCallback() {
           return;
         }
 
-        // 2) Confirm we actually have a session
-        const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-        if (sessErr || !session) {
-          console.error('[callback] no session:', sessErr);
+        // Verify a session exists
+        const { data: { session }, error: sErr } = await supabase.auth.getSession();
+        if (sErr || !session) {
+          console.error('[callback] no session:', sErr);
           setMsg('No session found. Redirecting to login…');
           setTimeout(() => router.replace('/login'), 1200);
           return;
         }
 
-        // 3) Success -> go where the user was headed (default /dashboard)
         router.replace(redirectPath);
       } catch (e) {
         console.error('[callback] unexpected:', e);
@@ -42,7 +40,6 @@ export default function AuthCallback() {
         setTimeout(() => router.replace('/login'), 1200);
       }
     };
-
     run();
   }, [router, redirectPath]);
 
