@@ -9,34 +9,52 @@ export default function OAuthCallback() {
   const [msg, setMsg] = useState("Completing sign-in...");
 
   useEffect(() => {
+    let cancelled = false;
+
     const run = async () => {
       try {
         const code = searchParams.get("code");
         const redirect = searchParams.get("redirect") || "/";
 
         if (!code) {
-          setMsg("Missing authorization code. Returning to login...");
+          setMsg("Missing authorization code. Returning to login…");
           setTimeout(() => (window.location.href = "/login"), 1200);
           return;
         }
 
-        // Exchange the code for a session in the browser
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        // Try exchange using code first
+        let { error } = await supabase.auth.exchangeCodeForSession(code);
+        // Some versions accept the full URL instead of just the code — try that if needed.
         if (error) {
-          setMsg("Sign-in failed. Redirecting to login...");
+          ({ error } = await supabase.auth.exchangeCodeForSession(
+            window.location.href
+          ));
+        }
+        if (error) {
+          setMsg("Sign-in failed. Redirecting to login…");
           setTimeout(() => (window.location.href = "/login"), 1200);
           return;
         }
 
-        // Success — go where the app asked
-        window.location.replace(redirect);
-      } catch (e) {
-        setMsg("Unexpected error. Redirecting to login...");
+        // Poll up to 5s for a non-null session (covers Safari/Private timing)
+        const start = Date.now();
+        while (Date.now() - start < 5000) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) break;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+
+        if (!cancelled) window.location.replace(redirect);
+      } catch {
+        setMsg("Unexpected error. Redirecting to login…");
         setTimeout(() => (window.location.href = "/login"), 1200);
       }
     };
 
     run();
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams]);
 
   return (

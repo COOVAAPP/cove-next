@@ -10,36 +10,47 @@ export default function ListPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let redirectTimer;
 
-    async function check() {
+    const decide = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        // Not logged in — send to login with redirect back to /list
-        router.replace(`/login?redirect=${encodeURIComponent("/list")}`);
+      if (session) {
+        if (!cancelled) setReady(true);
         return;
       }
 
-      if (!cancelled) setReady(true);
-    }
+      // Wait briefly (handles race with callback)
+      redirectTimer = setTimeout(async () => {
+        const { data: { session: s2 } } = await supabase.auth.getSession();
+        if (s2) {
+          if (!cancelled) setReady(true);
+        } else {
+          router.replace(`/login?redirect=${encodeURIComponent("/list")}`);
+        }
+      }, 1200);
+    };
 
-    // Also listen in case session arrives after callback
+    // Keep listening — if session arrives after mount, unlock page
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        if (session) setReady(true);
+        if (session) {
+          clearTimeout(redirectTimer);
+          if (!cancelled) setReady(true);
+        }
       }
     );
 
-    check();
+    decide();
+
     return () => {
       cancelled = true;
+      clearTimeout(redirectTimer);
       authListener.subscription?.unsubscribe();
     };
   }, [router]);
 
   if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
 
-  // ====== Your listing form goes here ======
   return (
     <main style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
       <h1>List Your Space</h1>
@@ -47,5 +58,4 @@ export default function ListPage() {
     </main>
   );
 }
-
 
