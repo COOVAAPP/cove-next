@@ -9,43 +9,41 @@ export default function OAuthCallback() {
   const [msg, setMsg] = useState("Completing sign‑in…");
 
   useEffect(() => {
+    let active = true;
+
     (async () => {
-      const redirect = searchParams.get("redirect") || "/list";
-      const code = searchParams.get("code");
+      try {
+        const code = searchParams.get("code");
+        const redirect = searchParams.get("redirect") || "/";
 
-      if (!code) {
-        // No auth code — go back to login with the intended redirect
-        window.location.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
-        return;
-      }
+        if (!code) {
+          if (!active) return;
+          setMsg("Missing authorization code. Returning to login…");
+          setTimeout(() => (window.location.href = "/login"), 1200);
+          return;
+        }
 
-      // Exchange the code for a session (browser cookies)
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
-      if (error) {
-        setMsg("Sign‑in failed. Returning to login…");
-        setTimeout(() => {
-          window.location.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
-        }, 800);
-        return;
-      }
+        // Exchange OAuth code for a session in the browser
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          if (!active) return;
+          setMsg("Sign‑in failed. Redirecting to login…");
+          setTimeout(() => (window.location.href = "/login"), 1200);
+          return;
+        }
 
-      // Safari: give the cookie/subtle storage a moment to settle
-      await new Promise((r) => setTimeout(r, 400));
-
-      // If session is already visible, go now
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+        // Success — go where the app asked
         window.location.replace(redirect);
-        return;
+      } catch {
+        if (!active) return;
+        setMsg("Unexpected error. Redirecting to login…");
+        setTimeout(() => (window.location.href = "/login"), 1200);
       }
-
-      // Otherwise listen once, with a fallback
-      const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-        if (s) window.location.replace(redirect);
-      });
-      setTimeout(() => window.location.replace(redirect), 1500);
-      return () => sub.subscription?.unsubscribe();
     })();
+
+    return () => {
+      active = false;
+    };
   }, [searchParams]);
 
   return (
