@@ -4,33 +4,46 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-export default function ListYourSpace() {
+export default function ListPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let unsub;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data?.session) {
-        router.replace("/login?redirect=/list");
+    let cancelled = false;
+
+    async function check() {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        // Not logged in — send to login with redirect back to /list
+        router.replace(`/login?redirect=${encodeURIComponent("/list")}`);
         return;
       }
-      setReady(true);
-      const sub = supabase.auth.onAuthStateChange((_e, session) => {
-        if (!session) router.replace("/login?redirect=/list");
-      });
-      unsub = () => sub.data.subscription.unsubscribe();
-    })();
-    return () => unsub?.();
+
+      if (!cancelled) setReady(true);
+    }
+
+    // Also listen in case session arrives after callback
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session) setReady(true);
+      }
+    );
+
+    check();
+    return () => {
+      cancelled = true;
+      authListener.subscription?.unsubscribe();
+    };
   }, [router]);
 
-  if (!ready) return <p style={{ padding: 40 }}>Loading…</p>;
+  if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
 
+  // ====== Your listing form goes here ======
   return (
-    <main style={{ maxWidth: 720, margin: "32px auto", padding: 16 }}>
-      <h1>List your space</h1>
-      <p>Signed in. (Form goes here.)</p>
+    <main style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
+      <h1>List Your Space</h1>
+      <p>Authenticated. Render your form here.</p>
     </main>
   );
 }
