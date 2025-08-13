@@ -15,7 +15,7 @@ export default function DashboardPage() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        router.replace('/login?redirect=/dashboard');
+        router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
         return;
       }
       setUser(session.user);

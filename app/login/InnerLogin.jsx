@@ -5,7 +5,6 @@ import { supabase } from "@/lib/supabaseClient";
 
 export default function InnerLogin() {
   const searchParams = useSearchParams();
-  // ✅ Default to "/" (NOT /dashboard). If the navbar sent ?redirect=/list, it will use that.
   const redirect = searchParams.get("redirect") || "/";
 
   const signInWithGoogle = async () => {
@@ -13,7 +12,6 @@ export default function InnerLogin() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        // ✅ Send the redirect we received to the callback route
         redirectTo: `${origin}/auth/callback?redirect=${encodeURIComponent(
           redirect
         )}`,

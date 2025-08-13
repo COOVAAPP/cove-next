@@ -35,4 +35,3 @@ export default function LoginComponent({ redirect = "/list" }) {
     </main>
   );
 }
-}
