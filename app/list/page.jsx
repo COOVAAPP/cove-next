@@ -1,50 +1,54 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
+export const revalidate = false; // dynamic; no ISR
 
 export default function ListPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let unsub;
 
     async function check() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session) {
-        router.replace(`/login?redirect=${encodeURIComponent("/list")}`);
+        router.replace(`/login?redirect=${encodeURIComponent('/list')}`);
         return;
       }
 
-      if (!cancelled) setReady(true);
+      setReady(true);
+
+      const { data } = supabase.auth.onAuthStateChange((_event, sess) => {
+        if (!sess) {
+          router.replace(`/login?redirect=${encodeURIComponent('/list')}`);
+        } else {
+          setReady(true);
+        }
+      });
+
+      unsub = data?.subscription;
     }
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session) setReady(true);
-      }
-    );
-
     check();
-
     return () => {
-      cancelled = true;
-      authListener.subscription?.unsubscribe();
+      unsub?.unsubscribe();
     };
   }, [router]);
 
   if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
 
   return (
-    <main style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
+    <main style={{ maxWidth: 720, margin: '40px auto', padding: '0 16px' }}>
       <h1>List Your Space</h1>
       <p>Authenticated. Render your form here.</p>
+      {/* TODO: Replace this with the real listing form */}
     </main>
   );
 }
