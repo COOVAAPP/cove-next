@@ -1,68 +1,55 @@
 'use client';
 
-import { Suspense } from 'react';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export const revalidate = false; // dynamic; no ISR
+/**
+ * Required so Next does not try to pre-render or cache this page.
+ * (Fixes: "Invalid revalidate value '[object Object]'" and prerender errors)
+ */
+export const revalidate = 0;
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
-function CallbackInner() {
-  const searchParams = useSearchParams();
-  const [msg, setMsg] = useState('Completing sign-in…');
+function CallbackWorker() {
+  const params = useSearchParams();
 
   useEffect(() => {
-    let cancelled = false;
+    (async () => {
+      const code = params.get('code');
+      const redirect = params.get('redirect') || '/';
 
-    async function run() {
+      if (!code) {
+        window.location.replace('/login');
+        return;
+      }
+
       try {
-        const code = searchParams.get('code');
-        const redirect = searchParams.get('redirect') || '/list';
-
-        if (!code) {
-          setMsg('Missing authorization code. Returning to login…');
-          setTimeout(() => {
-            if (!cancelled) window.location.replace('/login');
-          }, 900);
-          return;
-        }
-
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          setMsg('Sign-in failed. Redirecting to login…');
-          setTimeout(() => {
-            if (!cancelled) window.location.replace('/login');
-          }, 900);
+          window.location.replace('/login');
           return;
         }
-
-        // Success — go where we intended
+        // Success: go to the requested destination
         window.location.replace(redirect);
       } catch {
-        setMsg('Unexpected error. Redirecting to login…');
-        setTimeout(() => {
-          if (!cancelled) window.location.replace('/login');
-        }, 900);
+        window.location.replace('/login');
       }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams]);
+    })();
+  }, [params]);
 
   return (
     <div style={{ maxWidth: 460, margin: '60px auto', fontSize: 16 }}>
-      {msg}
+      Finishing sign‑in…
     </div>
   );
 }
 
 export default function OAuthCallbackPage() {
   return (
-    <Suspense fallback={<div style={{ maxWidth: 460, margin: '60px auto' }}>Completing sign-in…</div>}>
-      <CallbackInner />
+    <Suspense fallback={<div style={{ maxWidth: 460, margin: '60px auto', fontSize: 16 }}>Finishing sign‑in…</div>}>
+      <CallbackWorker />
     </Suspense>
   );
 }
