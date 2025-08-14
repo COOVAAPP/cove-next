@@ -1,29 +1,28 @@
-'use client';
+"use client";
 
-import { createClient } from '@/lib/supabaseClient';
+import { useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
-  const supabase = createClient();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get("redirect") || "/list";
 
-  const handleLogin = async () => {
+  const signIn = async () => {
     const origin = window.location.origin;
-    const params = new URLSearchParams(window.location.search);
-    const redirectPath = params.get('redirect') || '/list';
-
     await supabase.auth.signInWithOAuth({
-      provider: 'google',
+      provider: "google",
       options: {
-        redirectTo: `${origin}/auth/callback?redirect=${encodeURIComponent(redirectPath)}`
-      }
+        redirectTo: `${origin}/auth/callback?redirect=${encodeURIComponent(
+          redirect
+        )}`,
+      },
     });
   };
 
   return (
-    <main style={{ display:'grid', placeItems:'center', minHeight:'60vh' }}>
-      <div style={{ display:'grid', gap:12 }}>
-        <h1>Login</h1>
-        <button className="btn primary" onClick={handleLogin}>Sign in with Google</button>
-      </div>
+    <main style={{ maxWidth: 520, margin: "60px auto", padding: 24 }}>
+      <h1>Login</h1>
+      <button className="btn primary" onClick={signIn}>Sign in with Google</button>
     </main>
   );
 }
