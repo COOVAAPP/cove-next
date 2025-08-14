@@ -1,17 +1,18 @@
-// app/auth/callback/route.js
 import { NextResponse } from 'next/server';
-import { createClientServer } from '@/lib/supabaseClient';
+import { createClient } from '@/lib/supabaseClient';
 
-export async function GET(request) {
-  const { searchParams } = new URL(request.url);
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export async function GET(req) {
+  const supabase = createClient();
+  const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
-  const redirect = searchParams.get('redirect') || '/list';
+  const redirectPath = searchParams.get('redirect') || '/list';
 
   if (code) {
-    const supabase = createClientServer();
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  // Always finish at the requested page
-  return NextResponse.redirect(new URL(redirect, request.url));
+  return NextResponse.redirect(new URL(redirectPath, req.url));
 }
