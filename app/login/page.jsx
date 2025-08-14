@@ -1,14 +1,30 @@
-"use client";
+// app/login/page.jsx
+'use client';
 
-import LoginComponent from "./LoginComponent";
+import { useSearchParams } from 'next/navigation';
+import { createClientBrowser } from '@/lib/supabaseClient';
 
-export default function Page({ searchParams }) {
-  // Force default to /list (never /dashboard)
-  const redirect =
-    typeof searchParams?.redirect === "string" && searchParams.redirect
-      ? searchParams.redirect
-      : "/list";
+export default function LoginPage() {
+  const sp = useSearchParams();
+  const redirectPath = sp.get('redirect') || '/list';
+  const supabase = createClientBrowser();
 
-  return <LoginComponent redirect={redirect} />;
+  async function signIn() {
+    const origin = window.location.origin;
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${origin}/auth/callback?redirect=${encodeURIComponent(redirectPath)}`,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+  }
+
+  return (
+    <main style={{ maxWidth: 520, margin: '60px auto', padding: 16 }}>
+      <h1>Login</h1>
+      <button className="btn primary" onClick={signIn}>Sign in with Google</button>
+    </main>
+  );
 }
 
